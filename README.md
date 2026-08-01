@@ -8,11 +8,11 @@
 
 __A Home Assistant custom Integration for local handling of Tuya-based devices.__
 
-### **Usage and setup [Documentation](https://xzetsubou.github.io/hass-localtuya/)**
+### **Usage and setup [Documentation](https://github.com/jfjeronimo/localtuya)**
 
 <br>
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=hass-localtuya&owner=xZetsubou)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?category=integration&repository=localtuya&owner=jfjeronimo)
 
 
 
@@ -28,7 +28,7 @@ __A Home Assistant custom Integration for local handling of Tuya-based devices._
 
 <br>
 
-[𝐑𝐞𝐩𝐨𝐫𝐭𝐢𝐧𝐠 𝐚𝐧 𝐢𝐬𝐬𝐮𝐞](https://xzetsubou.github.io/hass-localtuya/report_issue/)
+[𝐑𝐞𝐩𝐨𝐫𝐭𝐢𝐧𝐠 𝐚𝐧 𝐢𝐬𝐬𝐮𝐞](https://github.com/jfjeronimo/localtuya/issues)
 
 <!-- ### Notes
 
@@ -42,6 +42,8 @@ The Cloud API account configuration is not mandatory (LocalTuya can work also wi
 <details><summary> 𝐂𝐫𝐞𝐝𝐢𝐭𝐬 </summary>
 <p>
     
+This repository is a fork of [xZetsubou/hass-localtuya](https://github.com/xZetsubou/hass-localtuya), now maintained by [jfjeronimo](https://github.com/jfjeronimo).
+
 [rospogrigio](https://github.com/rospogrigio), the original maintainer of LocalTuya. This fork was created when the [upstream](https://github.com/rospogrigio/localtuya) version was at `v5.2.1`.
 
 [NameLessJedi](https://github.com/NameLessJedi/localtuya-homeassistant) and [mileperhour](https://github.com/mileperhour/localtuya-homeassistant) being the major sources of inspiration, and whose code for switches is substantially unchanged.
