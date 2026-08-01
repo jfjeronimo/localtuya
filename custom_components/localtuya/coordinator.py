@@ -47,6 +47,12 @@ _LOGGER = logging.getLogger(__name__)
 RECONNECT_INTERVAL = timedelta(seconds=5)
 # Upper bound for the reconnect backoff so a stuck device isn't hammered.
 MAX_RECONNECT_INTERVAL = timedelta(seconds=30)
+# Retries for the initial status query over an already-established session.
+# Some devices are slow to answer the first query (e.g. right after a power
+# outage, while they keep retrying the blocked Tuya cloud), so retry the query
+# on the same connection instead of tearing it down and re-negotiating.
+INITIAL_STATUS_RETRIES = 3
+INITIAL_STATUS_RETRY_DELAY = 1.5
 # Subdevice: Offline events before disconnecting the device, around 5 minutes
 MIN_OFFLINE_EVENTS = 5 * 60 // HEARTBEAT_INTERVAL
 
@@ -255,7 +261,27 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                     await self._interface.reset(reset_dpids, cid=self._node_id)
 
                 self.debug("Retrieving initial state")
-                status = await self._interface.status(cid=self._node_id)
+                status = None
+                for attempt in range(1, INITIAL_STATUS_RETRIES + 1):
+                    try:
+                        status = await self._interface.status(cid=self._node_id)
+                        break
+                    except TimeoutError:
+                        # The TCP session is already up; only the data query
+                        # timed out. Retry over the same session (no new
+                        # handshake) before giving up, since the device may
+                        # just be slow to answer the first query.
+                        if (
+                            attempt >= INITIAL_STATUS_RETRIES
+                            or self.is_closing
+                            or not self.connected
+                        ):
+                            raise
+                        self.debug(
+                            f"Initial status query timed out "
+                            f"(attempt {attempt}/{INITIAL_STATUS_RETRIES}), retrying"
+                        )
+                        await asyncio.sleep(INITIAL_STATUS_RETRY_DELAY)
                 if status is None:
                     raise Exception("Failed to retrieve status")
 
