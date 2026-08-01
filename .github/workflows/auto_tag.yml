@@ -1,0 +1,63 @@
+###########################################################
+#                                                         #
+#  Create a tag + GitHub Release automatically on every   #
+#  push to master, using the version from manifest.json.  #
+#  A new release is only created when the manifest version #
+#  changes, so HACS/Home Assistant always sees the right   #
+#  version without any manual tagging.                     #
+#                                                         #
+###########################################################
+
+name: Auto Tag & Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  auto-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history/tags to check for existing tags
+
+      - name: Read version from manifest
+        id: version
+        run: |
+          version=$(jq -r '.version' custom_components/localtuya/manifest.json)
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::Could not read version from manifest.json"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Manifest version: $version"
+
+      - name: Check if tag already exists
+        id: check
+        run: |
+          tag="${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag already exists - nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag does not exist - a release will be created."
+          fi
+
+      - name: Create tag and release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
