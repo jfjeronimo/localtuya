@@ -267,21 +267,36 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                         status = await self._interface.status(cid=self._node_id)
                         break
                     except TimeoutError:
-                        # The TCP session is already up; only the data query
-                        # timed out. Retry over the same session (no new
-                        # handshake) before giving up, since the device may
-                        # just be slow to answer the first query.
-                        if (
-                            attempt >= INITIAL_STATUS_RETRIES
-                            or self.is_closing
-                            or not self.connected
-                        ):
+                        # The TCP connection (and, for 3.4/3.5, the session) is
+                        # already established; only the data query timed out.
+                        if self.is_closing or not self.connected:
                             raise
-                        self.debug(
-                            f"Initial status query timed out "
-                            f"(attempt {attempt}/{INITIAL_STATUS_RETRIES}), retrying"
-                        )
-                        await asyncio.sleep(INITIAL_STATUS_RETRY_DELAY)
+                        if attempt < INITIAL_STATUS_RETRIES:
+                            # Retry over the same session (no new handshake);
+                            # the device may just be slow to answer the first
+                            # query (e.g. right after a power outage).
+                            self.debug(
+                                f"Initial status query timed out "
+                                f"(attempt {attempt}/{INITIAL_STATUS_RETRIES}), retrying"
+                            )
+                            await asyncio.sleep(INITIAL_STATUS_RETRY_DELAY)
+                            continue
+                        # Last attempt failed. If the device's datapoints are
+                        # already known (previously discovered/configured), keep
+                        # the connection and reuse that known configuration
+                        # instead of tearing it down and re-querying forever.
+                        # The device is reachable and still accepts commands; it
+                        # will report real values on the next push/scan refresh,
+                        # and the heartbeat drops it if it is genuinely dead.
+                        if self.dps_to_request:
+                            self.info(
+                                "Initial status query timed out; keeping the "
+                                "connection with the known datapoints "
+                                "(state will update on the next device push)"
+                            )
+                            status = self._status or RESTORE_STATES
+                            break
+                        raise
                 if status is None:
                     raise Exception("Failed to retrieve status")
 
