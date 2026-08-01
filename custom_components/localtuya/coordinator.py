@@ -98,6 +98,9 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         # last_update_time: Sleep timer, a device that reports the status every x seconds then goes into sleep.
         self._last_update_time = time.monotonic() - 5
         self._pending_status: dict[str, dict[str, Any]] = {}
+        # Serialize commands so rapid on/off don't race on the protocol
+        # sequence number (Tuya devices handle one request at a time).
+        self._command_lock = asyncio.Lock()
 
         self.is_closing = False
         self._task_connect: asyncio.Task | None = None
@@ -430,7 +433,11 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         if self._interface and self._pending_status:
             payload, self._pending_status = self._pending_status.copy(), {}
             try:
-                await self._interface.set_dps(payload, cid=self._node_id)
+                # One command at a time per device: avoids concurrent
+                # exchanges racing on the sequence number (which made rapid
+                # on/off spam time out and drop the device).
+                async with self._command_lock:
+                    await self._interface.set_dps(payload, cid=self._node_id)
                 # Reflect the change as soon as the device ACKs the command,
                 # without waiting for it to push a separate status report (some
                 # devices are slow to send it, e.g. while busy retrying a

@@ -296,7 +296,11 @@ class MessageDispatcher(ContextualLogger):
             response = await asyncio.wait_for(future, timeout=timeout)
             return response
         except asyncio.TimeoutError:
-            self.abort()
+            # Give up on THIS request only. Do NOT abort() every pending
+            # listener: that would also cancel the heartbeat and any other
+            # in-flight command, dropping the whole device on a single
+            # timeout (e.g. when on/off commands are sent in quick
+            # succession). The failed listener is removed in `finally`.
             raise TimeoutError(
                 f"Command {cmd} timed out waiting for sequence number {seqno}"
             )
