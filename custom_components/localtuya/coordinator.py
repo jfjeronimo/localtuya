@@ -45,6 +45,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 RECONNECT_INTERVAL = timedelta(seconds=5)
+# Upper bound for the reconnect backoff so a stuck device isn't hammered.
+MAX_RECONNECT_INTERVAL = timedelta(seconds=30)
 # Subdevice: Offline events before disconnecting the device, around 5 minutes
 MIN_OFFLINE_EVENTS = 5 * 60 // HEARTBEAT_INTERVAL
 
@@ -460,13 +462,19 @@ class TuyaDevice(TuyaListener, ContextualLogger):
                     break
 
                 attempts += 1
-                scale = (
-                    2
-                    if (self.subdevice_state == SubdeviceState.ABSENT)
-                    or (attempts > MIN_OFFLINE_EVENTS)
-                    else 1
+                # Gentle capped backoff: retry quickly at first (5s, 10s, 20s)
+                # then settle at MAX_RECONNECT_INTERVAL. Hammering a device that
+                # is stuck holding a stale connection (e.g. right after a server
+                # restart) can keep its single TCP slot busy and prevent it from
+                # recovering, so give it room instead.
+                backoff = RECONNECT_INTERVAL.total_seconds() * (
+                    2 ** min(attempts - 1, 3)
                 )
-                await asyncio.sleep(scale * RECONNECT_INTERVAL.total_seconds())
+                if self.subdevice_state == SubdeviceState.ABSENT:
+                    backoff *= 2
+                await asyncio.sleep(
+                    min(backoff, MAX_RECONNECT_INTERVAL.total_seconds())
+                )
             except asyncio.CancelledError as e:
                 self.debug(f"Reconnect task has been canceled: {e}", force=True)
                 break

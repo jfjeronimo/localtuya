@@ -43,6 +43,7 @@ import binascii
 import hmac
 import json
 import logging
+import socket
 import struct
 import time
 import weakref
@@ -625,9 +626,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     break
                 except asyncio.TimeoutError:
                     fail_attempt += 1
-                    if fail_attempt >= 2:
+                    if fail_attempt >= 3:
                         self.debug("Heartbeat failed due to timeout, disconnecting")
                         break
+                    self.debug(
+                        "Heartbeat timed out (%s), retrying before disconnect",
+                        fail_attempt,
+                    )
                 except Exception as ex:  # pylint: disable=broad-except
                     self.exception("Heartbeat failed (%s), disconnecting", ex)
                     break
@@ -1300,6 +1305,34 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         return self.id
 
 
+def _enable_tcp_keepalive(transport):
+    """Enable TCP keep-alive on the connection's socket.
+
+    Tuya Wi-Fi devices only accept a single TCP connection at a time. After a
+    server restart (or a Wi-Fi glitch) a device can keep holding the previous,
+    now-dead connection, refusing new ones or leaving us with a half-open
+    "zombie" socket that looks connected but never answers. Enabling keep-alive
+    lets the OS probe the peer and tear such dead sockets down quickly instead
+    of relying only on the application-level heartbeat.
+    """
+    sock: socket.socket = transport.get_extra_info("socket")
+    if sock is None:
+        return
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # Start probing after 30s idle, probe every 10s, drop after 3 failures
+        # (~60s to detect a dead peer). Options are Linux-specific; guard each.
+        if hasattr(socket, "TCP_KEEPIDLE"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+        if hasattr(socket, "TCP_KEEPINTVL"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+        if hasattr(socket, "TCP_KEEPCNT"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+    except OSError:
+        # Not fatal: keep-alive is a best-effort backstop.
+        pass
+
+
 async def connect(
     address: str,
     device_id: str,
@@ -1314,7 +1347,7 @@ async def connect(
     loop = asyncio.get_running_loop()
     try:
         async with asyncio.timeout(timeout):
-            _, protocol = await loop.create_connection(
+            transport, protocol = await loop.create_connection(
                 lambda: TuyaProtocol(
                     device_id,
                     local_key,
@@ -1325,6 +1358,7 @@ async def connect(
                 address,
                 port,
             )
+            _enable_tcp_keepalive(transport)
     # Assuming the connect timed out then then the host isn't reachable.
     except (OSError, TimeoutError) as ex:
         if ex.errno == errno.EHOSTUNREACH or isinstance(ex, TimeoutError):
