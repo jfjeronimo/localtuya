@@ -431,10 +431,14 @@ class TuyaDevice(TuyaListener, ContextualLogger):
             payload, self._pending_status = self._pending_status.copy(), {}
             try:
                 await self._interface.set_dps(payload, cid=self._node_id)
-                # bluetooth devices usually does not send updated status payload.
-                # NOTE: This will override the status if the BLE device fails to receive the signal.
-                if self.is_write_only:
-                    self.status_updated(payload)
+                # Reflect the change as soon as the device ACKs the command,
+                # without waiting for it to push a separate status report (some
+                # devices are slow to send it, e.g. while busy retrying a
+                # blocked cloud). This makes the UI feel responsive; the
+                # device's own report will correct the state later if needed.
+                # (Write-only/BLE devices never send a report, so this is also
+                # their only source of truth.)
+                self.status_updated(payload)
             except (TimeoutError, Exception) as ex:
                 self.debug(f"Failed to set values {payload} --> {ex}", force=True)
         elif not self.connected:
