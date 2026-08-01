@@ -669,8 +669,21 @@ class TuyaDevice(TuyaListener, ContextualLogger):
         self._dispatch_status()
 
     @callback
-    def disconnected(self, exc=""):
+    def disconnected(self, exc="", source=None):
         """Device disconnected."""
+        # Ignore disconnect callbacks coming from a stale/superseded socket:
+        # a previous connection's connection_lost can fire while a new
+        # connection is already being established (e.g. during a reconnect or
+        # the multi-retry connect loop). Acting on it would null the fresh
+        # interface and cancel the in-flight connect, tearing the new
+        # connection down mid-handshake.
+        if (
+            source is not None
+            and self._interface is not None
+            and source is not self._interface
+        ):
+            self.debug("Ignoring disconnect from stale interface", force=True)
+            return
         if not self._interface:
             return
         self._interface = None

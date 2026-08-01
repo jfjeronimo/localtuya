@@ -423,7 +423,7 @@ class TuyaListener(ABC):
         """Device updated status."""
 
     @abstractmethod
-    def disconnected(self, exc=""):
+    def disconnected(self, exc="", source=None):
         """Device disconnected."""
 
     @abstractmethod
@@ -437,7 +437,7 @@ class EmptyListener(TuyaListener):
     def status_updated(self, status):
         """Device updated status."""
 
-    def disconnected(self, exc=""):
+    def disconnected(self, exc="", source=None):
         """Device disconnected."""
 
     def subdevice_state_updated(self, state: SubdeviceState):
@@ -675,7 +675,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         try:
             if listener is not None:
-                listener.disconnected(exc or "Connection lost")
+                # Pass ourselves as the source so the listener can ignore
+                # disconnect callbacks coming from a stale/superseded socket
+                # (a previous connection can fire connection_lost while a new
+                # one is already being established).
+                listener.disconnected(exc or "Connection lost", source=self)
         except Exception:  # pylint: disable=broad-except
             self.exception("Failed to call disconnected callback")
 
